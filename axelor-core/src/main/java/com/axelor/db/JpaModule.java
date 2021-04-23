@@ -22,26 +22,35 @@ import com.axelor.app.AvailableAppSettings;
 import com.axelor.auth.AuditInterceptor;
 import com.axelor.common.StringUtils;
 import com.axelor.db.hibernate.dialect.CustomDialectResolver;
+import com.axelor.db.hibernate.dialect.PostgreSQLDialect;
 import com.axelor.db.hibernate.naming.ImplicitNamingStrategyImpl;
 import com.axelor.db.hibernate.naming.PhysicalNamingStrategyImpl;
 import com.axelor.db.internal.DBHelper;
+
+
 import com.axelor.db.search.SearchMappingFactory;
 import com.axelor.db.search.SearchModule;
 import com.axelor.db.tenants.TenantConnectionProvider;
 import com.axelor.db.tenants.TenantModule;
 import com.axelor.db.tenants.TenantResolver;
 import com.google.inject.AbstractModule;
-import com.google.inject.persist.PersistService;
-import com.google.inject.persist.jpa.JpaPersistModule;
+
+
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import javax.inject.Inject;
+
+import com.axelor.db.jpa.JpaPersistModule;
+import com.google.inject.persist.PersistService;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import org.hibernate.MultiTenancyStrategy;
 import org.hibernate.cache.ehcache.EhCacheRegionFactory;
 import org.hibernate.cache.jcache.JCacheRegionFactory;
 import org.hibernate.cfg.Environment;
-import org.hibernate.hikaricp.internal.HikariCPConnectionProvider;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -82,6 +91,9 @@ public class JpaModule extends AbstractModule {
     this.autostart = autostart;
   }
 
+
+
+
   /**
    * Create a new instance of the {@link JpaModule} with the given persistence unit name with
    * <i>autoscan</i> and <i>autostart</i> enabled.
@@ -115,17 +127,18 @@ public class JpaModule extends AbstractModule {
     properties.put(
         Environment.PHYSICAL_NAMING_STRATEGY, PhysicalNamingStrategyImpl.class.getName());
     properties.put(Environment.DIALECT_RESOLVERS, CustomDialectResolver.class.getName());
+    properties.put("hibernate.dialect", PostgreSQLDialect.class.getName() );
 
     properties.put(Environment.AUTOCOMMIT, "false");
     properties.put(Environment.MAX_FETCH_DEPTH, "3");
 
     if (!DBHelper.isDataSourceUsed()) {
       // Use HikariCP as default pool provider
-      properties.put(Environment.CONNECTION_PROVIDER, HikariCPConnectionProvider.class.getName());
-      properties.put(Environment.CONNECTION_PROVIDER_DISABLES_AUTOCOMMIT, "true");
-      properties.put(AvailableAppSettings.HIBERNATE_HIKARI_MINIMUN_IDLE, "5");
-      properties.put(AvailableAppSettings.HIBERNATE_HIKARI_MAXIMUN_POOL_SIZE, "20");
-      properties.put(AvailableAppSettings.HIBERNATE_HIKARI_IDLE_TIMEOUT, "300000");
+    //  properties.put(Environment.CONNECTION_PROVIDER, HikariCPConnectionProvider.class.getName());
+    //  properties.put(Environment.CONNECTION_PROVIDER_DISABLES_AUTOCOMMIT, "true");
+     // properties.put(AvailableAppSettings.HIBERNATE_HIKARI_MINIMUN_IDLE, "5");
+     // properties.put(AvailableAppSettings.HIBERNATE_HIKARI_MAXIMUN_POOL_SIZE, "20");
+     // properties.put(AvailableAppSettings.HIBERNATE_HIKARI_IDLE_TIMEOUT, "300000");
     }
 
     // update properties with all hibernate.* settings from app configuration
@@ -166,13 +179,39 @@ public class JpaModule extends AbstractModule {
     keys.put("db.%s.user", Environment.JPA_JDBC_USER);
     keys.put("db.%s.password", Environment.JPA_JDBC_PASSWORD);
 
+    HikariConfig hc = new HikariConfig();
+
     for (String key : keys.keySet()) {
       String name = keys.get(key);
       String value = settings.get(String.format(key, unit));
       if (!StringUtils.isBlank(value)) {
-        properties.put(name, value.trim());
+
+//        properties.put(name, value.trim());
+
+
+        /*create datasource for jpa*/
+
+        //LOGGER.debug("creating share datasource for tenant config: {}", "config);
+
+        if (key.equals("db.%s.ddl")){properties.put(name, value.trim());}
+        if (key.equals("db.%s.driver")){
+          hc.setDriverClassName(value.trim());}
+        if (key.equals("db.%s.url")){
+          hc.setJdbcUrl(value.trim());}
+        if (key.equals("db.%s.user")){hc.setUsername(value.trim());}
+        if (key.equals("db.%s.password")){hc.setPassword(value.trim());}
+
+
       }
     }
+    hc.setMinimumIdle(5);
+    hc.setMaximumPoolSize(20);
+    hc.setIdleTimeout(300000);
+    hc.setAutoCommit(false);
+
+    HikariDataSource hikariDataSource = new HikariDataSource(hc);
+System.out.println("3.4");
+    properties.put(Environment.DATASOURCE, hikariDataSource);
   }
 
   private void configureCache(final AppSettings settings, final Properties properties) {
